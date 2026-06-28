@@ -1,7 +1,168 @@
-# 全栈开发技术文档（React + FastAPI）
+# 独立开发技术文档（产品经理 + 全栈开发）
 ## 前言
-这个项目是我根据我平时的开发习惯，开发的full stack Skill, 主要包含了前端和后端的开发流程。readme文档中包含了具体的文字说明。
-## 1. 全栈项目目录结构解析
+
+这个项目是我根据我平时的开发习惯，开发的full stack Skill, 主要包含了从产品设计到前后端的开发流程。readme文档中包含了具体的文字说明。
+
+## 设计阶段
+
+### 1. 场景梳理
+
+这一步的目的，是将存在于脑海里的构想，变为可以用自然语言描述的具体场景。
+因为自然语言是思维的边界，而且大模型接收的输入，也以自然语言为主，这一步相当重要。
+
+### 1.1 具体步骤
+
+画三个流程图（这一步可以简单点，主要是帮助自己梳理产品思路）
+1. 主流程：用户最理想的路径（比如：登录 -> 浏览商品 -> 商品详情页 -> 点击购买 -> 扫码支付）
+2. 异常流程：用户在使用过程中遇到的各种异常情况（比如：支付失败、网络超时、服务器异常等）
+3. 特殊流程：用户在使用过程中遇到的特殊情况（比如：用户未登录、用户未授权、用户未支付等）
+
+接下来，从这个流程图中，梳理出下面两个具体的产出（这一步应该做的尽可能详细）
+1. 用例图
+2. 事件风暴
+
+### 1.2 验收标准
+
+
+## 2. 前后端功能落地
+
+### 2.1 具体步骤
+
+因为上一阶段的产物是从整体系统的角度出发，而落地到前后端开发，需要进一步拆解。
+所以首先，应该从场景梳理阶段的产物中，抽象出前端与后端，然后根据下面的模板，写成设计层面的提示词。
+
+### 2.2 前端设计提示词模板
+
+#### 2.2.1 页面导航
+
+（目的：让AI知道有多少页面）
+
+- **站点地图 (Sitemap)**：
+    - `/login` (独立路由，无Header/Footer)
+    - `/dashboard` (主布局，含侧边栏)
+        - `/dashboard/overview` (首页概览)
+        - `/dashboard/orders` (订单列表)
+    - `/product/[id]` (动态详情页)
+- **全局导航规则**：未登录访问`/dashboard/*`自动重定向至`/login`。
+
+#### 2.2.2 页面跳转与交互逻辑
+
+（目的：让AI理解页面的跳转关系与跳转条件）
+
+- **核心流程：下单闭环**
+    1. 用户在 `/product/1` 点击【立即购买】。
+    2. **前端逻辑**：校验是否登录 (检查LocalStorage中的Token)。
+    3. **分支A (未登录)**：弹出Toast提示“请先登录”，**跳转**至 `/login`，并将当前URL作为`redirect`参数携带。
+    4. **分支B (已登录)**：调用后端接口 `POST /api/order`，显示全屏Loading遮罩。
+    5. 接口返回成功后，**跳转**至 `/payment` 页面，并自动拉起支付组件。
+
+#### 2.2.3 页面级布局结构
+
+（目的：让AI理解具体页面的布局）
+
+页面的布局架构如下：
+```text
++-----------------------------------------------------------+
+|  [Header]  Logo + 全局搜索框 (SearchBar) + 用户头像菜单      |
++--------------------+--------------------------------------+
+|                    |                                      |
+|  [Sidebar]        |  [Main Content Area]                |
+|  - 导航菜单项 1    |   +----------------------------+    |
+|  - 导航菜单项 2    |   |  Breadcrumb 面包屑导航       |    |
+|  - 导航菜单项 3    |   +----------------------------+    |
+|                    |   |                            |    |
+|                    |   |  [此处插入动态页面内容]      |    |
+|                    |   |                            |    |
++--------------------+--------------------------------------+
+```
+
+####  2.2.4 前端交互细节
+
+目的：让AI理解具体的交互细节
+
+| 交互区域 | 事件/触发 | 前端处理逻辑 (无需后端参与) | 异常/边界处理 |
+| :--- | :--- | :--- | :--- |
+| **登录页-手机号输入框** | `onChange` | **实时正则校验**：`/^1[3-9]\d{9}$/`。不符合时，输入框底部显示红色错误文案，【登录按钮】保持禁用态。 | 防抖处理 (Debounce 500ms)，避免频繁触发校验。 |
+| **订单列表-状态Tab** | `onClick` | 切换Tab时，**仅修改本地状态**，高亮当前Tab。**不请求接口**，而是重新获取数据。 | 若返回数据为空，展示 `<EmptyState>` 组件，文案为“暂无此类订单”。 |
+| **金额输入 (转账页)** | `onBlur` | 失去焦点时，自动格式化：保留两位小数 (如 `1000` -> `1,000.00`)。 | 若输入非数字字符，立即截断并Toast提示“仅支持数字”。 |
+
+#### 2.2.5 前后端契约与 Mock 数据 
+
+目的：规定好前后端沟通的标准
+
+- **API 端点 (Endpoint)**: `GET /api/v1/products?page=1&size=10`
+- **请求参数 (Request)**: `{ page: number; size: number; keyword?: string }`
+- **响应数据类型 (Response Interface)**:
+```typescript
+interface Product {
+  id: string;
+  name: string; // 规则：超过12个字符需在中间添加“...”截断 (如: 超长商品名称显...)
+  price: number; // 规则：前端展示除以100，带￥符号
+  mainImage: string; // 规则：若图片加载失败，显示默认占位图 `@/assets/placeholder.png`
+  status: 'ON_SALE' | 'OUT_OF_STOCK';
+}
+```
+- **初始 Mock 数据**: 请生成一个包含 6 条不同商品的 `mockData` 数组，用于页面初始化渲染。
+---
+
+#### 2.2.6 使用方法
+
+**分层交付**：如果项目太大，不要一次性把这个模板全扔进去（AI会丢失注意力）。**建议按页面交付**：先发全局架构让AI牢记，然后针对具体页面（如订单页）发送提示词。
+
+### 2.3 后端设计提示词模板
+
+有趣的是，我发现后端的设计上，提示词倒是不复杂，毕竟后端麻烦的地方在于具体的实现步骤，而这个步骤AI又比较强，导致提示词的难度上，反而是前端比较难。
+
+#### 2.3.1 数据模型
+
+目的：后端要定义数据库存什么
+
+实体 A (用户表 users):
+id (UUID, 主键), phone (varchar, 唯一索引), nickname, password_hash (bcrypt加密), created_at (timestamp)。
+
+实体 B (订单表 orders):
+id (雪花ID), user_id (外键关联), total_amount (bigint, 单位：分，禁止用浮点数), status (enum: 'PENDING','PAID','SHIPPED','CANCELLED'), expire_at (timestamp, 支付超时时间)。
+实体关系 (重要)：users 与 orders 是一对多关系。订单表中的 status 变更必须记录日志（请预留 order_logs 表，但暂不实现）。
+
+#### 2.3.2 API接口契约（要和2.2.5一致）
+
+目的：定义前后端交互的“路标”
+
+|---|---|---|---|---|
+| 方法 | 端点 | 功能描述 | 请求入参 | 成功出参 | 权限校验 |
+| POST |	/api/v1/order/create |	创建订单	| { productId: string, quantity: int, addressId: string }	{ orderId: string, payAmount: int, expireAt: string }	| 需携带 JWT Token (Header: Authorization) |
+|GET |	/api/v1/order/detail	| 查询订单详情	| ?orderId=xxx	| { id, status, amount, items: [{name, price}], address }	| 需携带 JWT，且 只能查询本人订单 |
+|PUT |	/api/v1/order/cancel |	取消订单 |	{ orderId: string }	 | { result: boolean } |	校验 Token，且 仅允许 'PENDING' 状态取消 |
+
+#### 2.3.3 核心业务逻辑规则
+
+目的：约束AI,防止AI写出错误的CRUD
+
+规则 1：下单扣库存（事务一致性）
+逻辑：创建订单时，必须使用数据库行锁（SELECT FOR UPDATE）或Redis原子递减扣减库存。
+异常处理：若库存不足，必须回滚事务，返回错误码 40001，提示“库存不足”。
+
+规则 2：超时自动取消（幂等性处理）
+逻辑：创建订单时，向消息队列（如RocketMQ）发送延迟消息（延迟15分钟）。15分钟后系统消费消息，检查订单状态。
+边界条件：若消费时订单已支付，则不执行任何操作；若仍为 PENDING，则将其改为 CANCELLED 并回滚库存。
+
+规则 3：敏感字段过滤
+逻辑：查询用户信息接口，严禁返回 password_hash 字段。AI生成SQL或ORM查询时，必须使用 @JsonIgnore 或 select 指定特定字段。
+
+#### 2.3.4 异常码与全局拦截规范
+
+目的：后端返回给前端的信息必须统一，方便前端提示用户
+
+请在全局异常拦截器中定义以下映射：
+401：Token过期或无效（前端需跳转登录）。
+403：无权限访问他人数据（前端需弹窗提示）。
+500：系统内部错误（仅返回“系统繁忙”，严禁将堆栈信息暴露给前端）。
+
+## 3. 全栈项目落地提示词模板
+
+那么让AI充分理解了前后端的设计后，就应该用AI来写代码了。
+
+### 3.1 项目结构
 
 本全栈方案采用前后端一体的 **Monorepo** 结构，以 `backend/` 和 `frontend/` 作为顶层划分，配合 `shared/` 实现类型共享。
 
@@ -22,33 +183,33 @@ project-root/
 ```text
 backend/
 ├── app/
-│   ├── api/                     # 🌐 接口层：HTTP 路由与依赖注入
+│   ├── api/                     # 接口层：HTTP 路由与依赖注入
 │   │   ├── v1/
 │   │   │   ├── endpoints/       # 具体业务路由文件
 │   │   │   └── __init__.py
 │   │   └── deps.py              # 依赖项（DB会话、当前用户）
 │   │
-│   ├── core/                    # ⚙️ 核心配置与基础设施
+│   ├── core/                    # 核心配置与基础设施
 │   │   ├── config.py            # Pydantic Settings 配置类
 │   │   ├── security.py          # JWT 生成、密码哈希验证
 │   │   └── database.py          # SQLAlchemy 引擎与连接池
 │   │
-│   ├── models/                  # 🗄️ 数据模型层：SQLAlchemy ORM 表定义
+│   ├── models/                  # 数据模型层：SQLAlchemy ORM 表定义
 │   │   ├── knowledge_base.py
 │   │   └── user.py
 │   │
-│   ├── schemas/                 # 📦 Pydantic 模型：API 请求/响应结构校验
-│   │   ├── knowledge_base.py    # ⭐ 前后端类型契约的唯一源头
+│   ├── schemas/                 # Pydantic 模型：API 请求/响应结构校验
+│   │   ├── knowledge_base.py    # 前后端类型契约的唯一源头
 │   │   └── user.py
 │   │
-│   ├── services/                # 🧠 业务逻辑层：核心功能实现
+│   ├── services/                # 业务逻辑层：核心功能实现
 │   │   ├── knowledge_base.py    # 知识库增删改查、向量库同步逻辑
 │   │   └── auth.py              # 登录注册、权限校验
 │   │
-│   ├── utils/                   # 🛠️ 通用工具函数（文件解析、日志等）
-│   └── main.py                  # 🚀 FastAPI 应用入口
+│   ├── utils/                   # 通用工具函数（文件解析、日志等）
+│   └── main.py                  # FastAPI 应用入口
 │
-├── tests/                       # 🧪 单元测试与集成测试
+├── tests/                       # 单元测试与集成测试
 ├── requirements.txt             # 依赖清单
 └── .env.example                 # 环境变量模板
 ```
@@ -67,31 +228,31 @@ backend/
 
 ```text
 frontend/
-├── public/                      # 🌍 静态资源（index.html、favicon）
+├── public/                      # 静态资源（index.html、favicon）
 ├── src/
-│   ├── api/                     # 📡 API 接口调用（与后端路由一一对应）
+│   ├── api/                     # API 接口调用（与后端路由一一对应）
 │   │   ├── client.ts            # Axios 实例、请求/响应拦截器
 │   │   ├── knowledge.ts         # 知识库相关 API
 │   │   └── auth.ts              # 认证相关 API
 │   │
-│   ├── components/              # 🧩 通用可复用 UI 组件
+│   ├── components/              # 通用可复用 UI 组件
 │   │   ├── Button.tsx
 │   │   ├── Card.tsx
 │   │   ├── Modal.tsx
 │   │   └── Layout.tsx
 │   │
-│   ├── hooks/                   # 🪝 自定义 Hooks
+│   ├── hooks/                   # 自定义 Hooks
 │   │   ├── useCreateKB.ts
 │   │   └── useAuth.ts
 │   │
-│   ├── pages/                   # 📄 路由页面组件（与 URL 一一对应）
+│   ├── pages/                   # 路由页面组件（与 URL 一一对应）
 │   │   ├── HomePage.tsx
 │   │   ├── LoginPage.tsx
 │   │   └── KnowledgeBasePage.tsx
 │   │
-│   ├── utils/                   # 🔧 工具函数（日期格式化、防抖等）
-│   ├── types/                   # 📋 全局 TypeScript 类型定义
-│   │   └── api.d.ts             # ⭐ 由 OpenAPI 自动生成，严禁手动修改
+│   ├── utils/                   # 工具函数（日期格式化、防抖等）
+│   ├── types/                   # 全局 TypeScript 类型定义
+│   │   └── api.d.ts             # 由 OpenAPI 自动生成，严禁手动修改
 │   ├── App.tsx                  # 根组件
 │   └── main.tsx                 # 应用入口
 │
@@ -114,113 +275,193 @@ frontend/
 
 ## 2. 前后端交互的标准写法
 
+前后端通信采用 **Vite Proxy + Axios 实例 + 业务层封装** 三层架构。开发时通过 Vite 代理转发请求，避免跨域问题；生产部署时由 Nginx 反向代理接管。
+
 ### 2.1 完整交互链路图
 
 ```
-React 组件 
-  → 调用 api/knowledge.ts (类型约束)
-    → apiClient 发送 HTTP 请求 (JSON)
-      → FastAPI 路由接收 (路径匹配)
-        → Pydantic 校验 (schemas/)
-          → Service 业务逻辑 (services/)
-            → 返回数据 → Pydantic 序列化 (schemas/)
-              → HTTP Response (JSON)
-                → React 状态更新 → UI 渲染
+浏览器中的页面（localhost:5173）
+   │
+   │  stages.ts 调用 fetchStages()
+   ▼
+┌─────────────────────────────────────┐
+│  ① API 业务封装层（stages.ts）      │
+│  调用 apiClient.get("/stages")      │
+│  baseURL = "/api/v1" → /api/v1/stages │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│  ② Axios 实例层（client.ts）        │
+│  统一的 baseURL、超时、请求头配置    │
+│  （后续可在此添加 Token 拦截器）     │
+└──────────┬──────────────────────────┘
+           │  HTTP 请求到 localhost:5173
+           ▼
+┌─────────────────────────────────────┐
+│  ③ Vite 代理层（vite.config.ts）    │
+│  匹配 /api 前缀                     │
+│  转发到 http://localhost:8000       │
+└──────────┬──────────────────────────┘
+           │  转发到后端
+           ▼
+┌─────────────────────────────────────┐
+│  FastAPI 后端（localhost:8000）      │
+│  → 路径匹配 /api/v1/stages          │
+│  → Pydantic 校验（schemas/）        │
+│  → 数据库查询（models/）            │
+│  → 返回 JSON 响应                   │
+└─────────────────────────────────────┘
+           │
+           ▼
+   JSON 数据原路返回 → UI 渲染
 ```
 
-### 2.2 后端代码示例
+### 2.2 三层前端代码详解
 
-#### `app/schemas/knowledge_base.py` - 定义数据结构
+#### 第一层：Vite 代理 —— 解决开发跨域
+
+`frontend/vite.config.ts`：
+
+```typescript
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  server: {
+    port: 5173,                                    // 前端开发服务器端口
+    proxy: {
+      "/api": {                                     // 匹配所有以 /api 开头的请求
+        target: "http://localhost:8000",            // 转发到后端地址
+        changeOrigin: true,                         // 修改请求 Host 头为目标地址
+      },
+    },
+  },
+});
+```
+
+> **生产环境**：不再使用 Vite 代理，而是由 Nginx 处理 `/api/` 路径的反向代理。
+
+#### 第二层：Axios 实例 —— 统一请求配置
+
+`frontend/src/api/client.ts`：
+
+```typescript
+import axios from "axios";
+
+const apiClient = axios.create({
+  baseURL: "/api/v1",           // 基础路径，后续请求只需写相对路径
+  timeout: 30000,               // 30 秒超时
+  headers: { "Content-Type": "application/json" },
+});
+
+export default apiClient;
+```
+
+所有业务 API 文件统一导入此实例，确保请求配置一致。后续如需添加 Token 自动携带、错误全局拦截等，只需在此文件中添加拦截器即可。
+
+#### 第三层：业务 API 封装 —— 按模块组织
+
+`frontend/src/api/stages.ts`：
+
+```typescript
+import apiClient from "./client";
+
+// 定义返回数据的 TypeScript 类型
+export interface StageListItem {
+  id: number;
+  slug: string;
+  title: string;
+  subtitle: string;
+  description: string;
+  tags: string[];
+  order: number;
+}
+
+export async function fetchStages(): Promise<StageListItem[]> {
+  const res = await apiClient.get<StageListItem[]>("/stages");
+  return res.data;   // Axios 的 res.data 才是真正的响应体
+}
+```
+
+每个后端路由组对应一个 API 文件（如 `stages.ts`、`auth.ts`、`rag.ts`），保持前后端映射关系清晰。
+
+### 2.3 后端代码示例
+
+#### `app/schemas/stage.py` —— 定义数据结构
 
 ```python
-from pydantic import BaseModel, Field
-from typing import Optional
+from pydantic import BaseModel
 
-class KnowledgeBaseCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: Optional[str] = None
+class StageBase(BaseModel):
+    slug: str
+    title: str
+    description: str = ""
+    tags: list[str] = []
 
-class KnowledgeBaseResponse(BaseModel):
-    id: str
-    name: str
-    status: str
-    created_at: str
+class StageList(StageBase):
+    id: int
+    order: int
+
+    model_config = {"from_attributes": True}
 ```
 
-#### `app/api/v1/endpoints/knowledge.py` - 定义路由
+#### `app/api/v1/endpoints/stages.py` —— 定义路由
 
 ```python
 from fastapi import APIRouter, Depends
-from app.schemas.knowledge_base import KnowledgeBaseCreate, KnowledgeBaseResponse
-from app.services.knowledge_service import KnowledgeService
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-router = APIRouter()
+from app.core.database import get_db
+from app.models.stage import Stage
+from app.schemas.stage import StageList
 
-@router.post("/knowledge-bases", response_model=KnowledgeBaseResponse)
-def create_kb(
-    data: KnowledgeBaseCreate,
-    service: KnowledgeService = Depends()
-):
-    return service.create(data)
+router = APIRouter(prefix="/stages", tags=["stages"])
+
+@router.get("", response_model=list[StageList])
+async def list_stages(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Stage).order_by(Stage.order))
+    stages = result.scalars().all()
+    return [
+        StageList(
+            id=s.id, slug=s.slug, title=s.title,
+            description=s.description or "",
+            tags=s.tags.split(",") if s.tags else [],
+            order=s.order,
+        )
+        for s in stages
+    ]
 ```
 
-### 2.3 前端代码示例
+### 2.4 前端页面调用示例
 
-#### `frontend/src/api/knowledge.ts` - 封装 API 调用
-
-```typescript
-import { apiClient } from '@/api/client';
-import type { KnowledgeBaseCreate, KnowledgeBaseResponse } from '@/types/api';
-
-export const createKnowledgeBase = (data: KnowledgeBaseCreate) => {
-  return apiClient.post<KnowledgeBaseResponse>('/api/v1/knowledge-bases', data);
-};
-```
-
-#### `frontend/src/hooks/useCreateKB.ts` - 业务 Hook
-
-```typescript
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { createKnowledgeBase } from '@/api/knowledge';
-
-export const useCreateKB = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: createKnowledgeBase,
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['knowledge-bases'] });
-    },
-  });
-};
-```
-
-#### `frontend/src/pages/KnowledgeBasePage.tsx` - 页面组件
+`frontend/src/pages/Home.tsx`：
 
 ```tsx
-import { useCreateKB } from '@/hooks/useCreateKB';
+import { useQuery } from "@tanstack/react-query";
+import { fetchStages } from "../api/stages";
 
-export const KnowledgeBasePage = () => {
-  const { mutate, isPending } = useCreateKB();
+function Home() {
+  const { data: stages, isLoading } = useQuery({
+    queryKey: ["stages"],
+    queryFn: fetchStages,
+  });
 
-  return (
-    <Button
-      isLoading={isPending}
-      onClick={() => mutate({ name: '产品手册', description: 'V2.0' })}
-    >
-      新建知识库
-    </Button>
-  );
-};
+  if (isLoading) return <div>加载中...</div>;
+
+  return <div>{stages?.map(stage => <StageCard key={stage.id} stage={stage} />)}</div>;
+}
 ```
 
-### 2.4 关键规范
+### 2.5 关键规范
 
 | 规范项 | 要求 | 原因 |
 |--------|------|------|
-| **类型来源** | 前端必须使用 `@/types/api` 中的类型，严禁手写接口类型 | 保证与后端 Schema 100% 一致 |
-| **API 封装** | 所有请求必须通过 `apiClient` 发起 | 统一处理 Token 添加、错误弹窗、日志上报 |
-| **状态管理** | 服务端数据使用 React Query，客户端 UI 状态使用 Zustand | 职责分离，缓存策略清晰 |
-| **错误处理** | 业务错误由 API 层统一处理，组件层仅需处理 `isError` 状态 | 避免重复 try-catch |
+| **baseURL 使用相对路径** | `client.ts` 中填 `/api/v1`，不填完整 URL | 开发环境由 Vite 代理处理，生产环境由 Nginx 处理，无需修改代码 |
+| **API 文件按业务拆分** | 每个后端路由组对应一个 `api/*.ts` 文件 | 保持前后端映射清晰，方便定位 |
+| **Axios 实例唯一** | 所有请求必须通过 `client.ts` 导出的实例发送 | 统一配置超时、拦截器、Token 注入 |
+| **页面不直接调用 axios** | 页面通过 API 封装文件间接请求 | 解耦：后端接口变更时只需改 API 文件，不影响页面 |
+| **错误处理** | 业务错误由 API 层或 React Query 统一处理 | 避免页面重复编写 try-catch |
 
 ---
 

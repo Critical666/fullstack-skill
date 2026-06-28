@@ -32,7 +32,7 @@
 2. **用例图已产出**：清晰标注了所有参与者（Actor）及其与系统的交互关系，每个用例有明确的触发条件和前置条件。
 3. **事件风暴已产出**：包含命令（Command）、事件（Event）、聚合（Aggregate）、限界上下文（Bounded Context）四个要素，事件链路完整可追溯。
 
-> **自检方法**：找一个不熟悉该业务的同事或直接发给 AI，看对方仅凭这三个交付物能否复述出产品的核心逻辑。如果能复述 80% 以上，说明场景梳理到位。
+**自检方法**：直接发给 AI，看对方仅凭这三个交付物能否复述出产品的核心逻辑。如果能复述 80% 以上，说明场景梳理到位。
 
 ## 2. 前后端功能落地
 
@@ -127,22 +127,22 @@ interface Product {
 
 目的：后端要定义数据库存什么
 
-实体 A (用户表 users):
-id (UUID, 主键), phone (varchar, 唯一索引), nickname, password_hash (bcrypt加密), created_at (timestamp)。
+| 实体 | 表名 | 字段 | 说明 |
+|------|------|------|------|
+| 用户 | users | `id` (UUID, PK)、`phone` (varchar, 唯一索引)、`nickname`、`password_hash` (bcrypt)、`created_at` (timestamp) | |
+| 订单 | orders | `id` (雪花ID, PK)、`user_id` (FK → users)、`total_amount` (bigint, 单位：分)、`status` (enum: PENDING/PAID/SHIPPED/CANCELLED)、`expire_at` (timestamp) | 金额禁止用浮点数 |
 
-实体 B (订单表 orders):
-id (雪花ID), user_id (外键关联), total_amount (bigint, 单位：分，禁止用浮点数), status (enum: 'PENDING','PAID','SHIPPED','CANCELLED'), expire_at (timestamp, 支付超时时间)。
-实体关系 (重要)：users 与 orders 是一对多关系。订单表中的 status 变更必须记录日志（请预留 order_logs 表，但暂不实现）。
+实体关系：users 与 orders 是一对多关系。订单表中 status 变更必须记录日志（请预留 order_logs 表，但暂不实现）。
 
 #### 2.3.2 API接口契约（要和2.2.5一致）
 
 目的：定义前后端交互的“路标”
 
-|---|---|---|---|---|
 | 方法 | 端点 | 功能描述 | 请求入参 | 成功出参 | 权限校验 |
-| POST |	/api/v1/order/create |	创建订单	| { productId: string, quantity: int, addressId: string }	{ orderId: string, payAmount: int, expireAt: string }	| 需携带 JWT Token (Header: Authorization) |
-|GET |	/api/v1/order/detail	| 查询订单详情	| ?orderId=xxx	| { id, status, amount, items: [{name, price}], address }	| 需携带 JWT，且 只能查询本人订单 |
-|PUT |	/api/v1/order/cancel |	取消订单 |	{ orderId: string }	 | { result: boolean } |	校验 Token，且 仅允许 'PENDING' 状态取消 |
+|------|------|----------|----------|----------|----------|
+| POST | `/api/v1/order/create` | 创建订单 | `{ productId: string, quantity: int, addressId: string }` | `{ orderId: string, payAmount: int, expireAt: string }` | 需携带 JWT Token (Header: Authorization) |
+| GET | `/api/v1/order/detail` | 查询订单详情 | `?orderId=xxx` | `{ id, status, amount, items: [{name, price}], address }` | 需携带 JWT，且只能查询本人订单 |
+| PUT | `/api/v1/order/cancel` | 取消订单 | `{ orderId: string }` | `{ result: boolean }` | 校验 Token，且仅允许 PENDING 状态取消 |
 
 #### 2.3.3 核心业务逻辑规则
 

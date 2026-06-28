@@ -1242,7 +1242,3 @@ openssl rand -hex 32  # 生成 64 位十六进制密钥
 | 部署到服务器 | `bash scripts/deploy.sh` |
 
 ---
-
-*文档版本：v2.0*  
-*适用框架：React 18 + TypeScript + Vite | FastAPI 0.115+ + Pydantic V2 | uv 0.5+*  
-*章节概要：第1-3章 目录结构与开发指南 | 第4章 项目初始化 | 第5章 打包构建 | 第6章 容器化部署 | 第7章 最佳实践*
